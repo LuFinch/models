@@ -23,12 +23,13 @@ from official.vision.image_classification.resnet import common
 from official.vision.image_classification.resnet import imagenet_preprocessing
 from official.vision.image_classification.resnet import resnet_model
 
+import horovod.tensorflow as hvd
 
 class ResnetRunnable(orbit.StandardTrainer, orbit.StandardEvaluator):
   """Implements the training and evaluation APIs for Resnet model."""
 
   def __init__(self, flags_obj, time_callback, epoch_steps):
-    self.strategy = tf.distribute.get_strategy()
+    self.strategy = None
     self.flags_obj = flags_obj
     self.dtype = flags_core.get_tf_dtype(flags_obj)
     self.time_callback = time_callback
@@ -62,7 +63,7 @@ class ResnetRunnable(orbit.StandardTrainer, orbit.StandardEvaluator):
         use_l2_regularizer=not flags_obj.single_l2_loss_op)
 
     lr_schedule = common.PiecewiseConstantDecayWithWarmup(
-        batch_size=flags_obj.batch_size,
+        batch_size=flags_obj.batch_size * hvd.size(),
         epoch_size=imagenet_preprocessing.NUM_IMAGES['train'],
         warmup_epochs=common.LR_SCHEDULE[0][1],
         boundaries=list(p[1] for p in common.LR_SCHEDULE[1:]),
@@ -77,6 +78,7 @@ class ResnetRunnable(orbit.StandardTrainer, orbit.StandardEvaluator):
         use_float16=self.dtype == tf.float16,
         loss_scale=flags_core.get_loss_scale(flags_obj, default_for_fp16=128))
 
+    self.optimizer = hvd.DistributedOptimizer(self.optimizer)
     self.train_loss = tf.keras.metrics.Mean('train_loss', dtype=tf.float32)
     self.train_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(
         'train_accuracy', dtype=tf.float32)
