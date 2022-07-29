@@ -128,15 +128,6 @@ def run(flags_obj):
     data_format = 'channels_first'
   tf.keras.backend.set_image_data_format(data_format)
   session_config.gpu_options.visible_device_list = str(hvd.local_rank())
-
-'''
-  strategy = distribute_utils.get_distribution_strategy(
-      distribution_strategy=flags_obj.distribution_strategy,
-      num_gpus=flags_obj.num_gpus,
-      all_reduce_alg=flags_obj.all_reduce_alg,
-      num_packs=flags_obj.num_packs,
-      tpu_address=flags_obj.tpu)
-'''
   per_epoch_steps, train_epochs, eval_steps = get_num_train_iterations(
       flags_obj)
   if flags_obj.steps_per_loop is None:
