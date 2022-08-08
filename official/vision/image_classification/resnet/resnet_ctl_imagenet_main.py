@@ -128,6 +128,14 @@ def run(flags_obj):
   if data_format is None:
     data_format = 'channels_first'
   tf.keras.backend.set_image_data_format(data_format)
+
+  strategy = distribute_utils.get_distribution_strategy(
+      distribution_strategy=flags_obj.distribution_strategy,
+      num_gpus=flags_obj.num_gpus,
+      all_reduce_alg=flags_obj.all_reduce_alg,
+      num_packs=flags_obj.num_packs,
+      tpu_address=flags_obj.tpu)
+
   per_epoch_steps, train_epochs, eval_steps = get_num_train_iterations(
       flags_obj)
   if flags_obj.steps_per_loop is None:
@@ -148,9 +156,9 @@ def run(flags_obj):
       flags_obj.batch_size,
       flags_obj.log_steps,
       logdir=flags_obj.model_dir if flags_obj.enable_tensorboard else None)
-
-  runnable = resnet_runnable.ResnetRunnable(flags_obj, time_callback,
-                                            per_epoch_steps)
+  with distribute_utils.get_strategy_scope(strategy):
+    runnable = resnet_runnable.ResnetRunnable(flags_obj, time_callback,
+                                              per_epoch_steps)
 
   eval_interval = flags_obj.epochs_between_evals * per_epoch_steps
   checkpoint_interval = (
@@ -165,6 +173,7 @@ def run(flags_obj):
       checkpoint_interval=checkpoint_interval)
 
   resnet_controller = orbit.Controller(
+      strategy=strategy,
       trainer=runnable,
       evaluator=runnable if not flags_obj.skip_eval else None,
       global_step=runnable.global_step,
