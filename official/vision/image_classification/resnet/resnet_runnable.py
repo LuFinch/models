@@ -23,7 +23,6 @@ from official.vision.image_classification.resnet import common
 from official.vision.image_classification.resnet import imagenet_preprocessing
 from official.vision.image_classification.resnet import resnet_model
 
-import horovod.tensorflow as hvd
 
 class ResnetRunnable(orbit.StandardTrainer, orbit.StandardEvaluator):
   """Implements the training and evaluation APIs for Resnet model."""
@@ -63,7 +62,7 @@ class ResnetRunnable(orbit.StandardTrainer, orbit.StandardEvaluator):
         use_l2_regularizer=not flags_obj.single_l2_loss_op)
 
     lr_schedule = common.PiecewiseConstantDecayWithWarmup(
-        batch_size=flags_obj.batch_size * hvd.size(),
+        batch_size=flags_obj.batch_size,
         epoch_size=imagenet_preprocessing.NUM_IMAGES['train'],
         warmup_epochs=common.LR_SCHEDULE[0][1],
         boundaries=list(p[1] for p in common.LR_SCHEDULE[1:]),
