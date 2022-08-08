@@ -33,7 +33,7 @@ LR_SCHEDULE = [  # (multiplier, epoch to start) tuples
     (1.0, 5), (0.1, 30), (0.01, 60), (0.001, 80)
 ]
 
-
+@tf.keras.utils.register_keras_serializable('PiecewiseConstantWithWarmupSchedule')
 class PiecewiseConstantDecayWithWarmup(
     tf.keras.optimizers.schedules.LearningRateSchedule):
   """Piecewise constant decay with warmup schedule."""
@@ -54,7 +54,7 @@ class PiecewiseConstantDecayWithWarmup(
     base_lr_batch_size = 256
     steps_per_epoch = epoch_size // batch_size
 
-    self.rescaled_lr = BASE_LEARNING_RATE * batch_size / base_lr_batch_size
+    self.rescaled_lr = 0.1 * batch_size / base_lr_batch_size
     self.step_boundaries = [float(steps_per_epoch) * x for x in boundaries]
     self.lr_values = [self.rescaled_lr * m for m in multipliers]
     self.warmup_steps = warmup_epochs * steps_per_epoch

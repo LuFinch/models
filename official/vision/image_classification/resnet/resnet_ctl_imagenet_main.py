@@ -110,6 +110,7 @@ def run(flags_obj):
     gpus = tf.config.experimental.list_physical_devices('GPU')
     for gpu in gpus:
       tf.config.experimental.set_memory_growth(gpu, True)
+    print("zl_debug %d ", hvd.local_rank())
     tf.config.experimental.set_visible_devices(gpus[hvd.local_rank()], 'GPU')
 
   keras_utils.set_session_config()
@@ -127,7 +128,6 @@ def run(flags_obj):
   if data_format is None:
     data_format = 'channels_first'
   tf.keras.backend.set_image_data_format(data_format)
-  session_config.gpu_options.visible_device_list = str(hvd.local_rank())
   per_epoch_steps, train_epochs, eval_steps = get_num_train_iterations(
       flags_obj)
   if flags_obj.steps_per_loop is None:
@@ -175,13 +175,7 @@ def run(flags_obj):
       eval_summary_dir=os.path.join(flags_obj.model_dir, 'eval'))
 
   time_callback.on_train_begin()
-  if not flags_obj.skip_eval:
-    resnet_controller.train_and_evaluate(
-        train_steps=per_epoch_steps * train_epochs,
-        eval_steps=eval_steps,
-        eval_interval=eval_interval)
-  else:
-    resnet_controller.train(steps=per_epoch_steps * train_epochs)
+  resnet_controller.train(steps=per_epoch_steps * train_epochs)
   time_callback.on_train_end()
 
   stats = build_stats(runnable, time_callback)
@@ -192,7 +186,6 @@ def main(_):
   model_helpers.apply_clean(flags.FLAGS)
   stats = run(flags.FLAGS)
   logging.info('Run stats:\n%s', stats)
-
 
 if __name__ == '__main__':
   logging.set_verbosity(logging.INFO)
