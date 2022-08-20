@@ -68,16 +68,13 @@ class WarmupDecaySchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
     return lr
 
   def get_config(self) -> Mapping[str, Any]:
-    #config = self._lr_schedule.get_config()
-    config={}
-    print("zl_debug 3333")
-    print(config)
+    config = {}
     config.update({
         "warmup_steps": self._warmup_steps,
         "warmup_lr": self._warmup_lr,
         "lr_schedule": self._lr_schedule,
     })
-    print(config)
+    print("zl_debug, ", config)
     return config
 
 

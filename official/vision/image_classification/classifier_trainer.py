@@ -237,11 +237,11 @@ def initialize(params: base_configs.ExperimentConfig,
   keras_utils.set_session_config(enable_xla=params.runtime.enable_xla)
   performance.set_mixed_precision_policy(dataset_builder.dtype)
   if is_mpi:
-    gpus = tf.config.experimental.list_physical_devices('GPU')
+    gpus = tf.config.experimental.list_physical_devices('XPU')
     for gpu in gpus:
       tf.config.experimental.set_memory_growth(gpu, True)
     print("zl_debug %d ", hvd.local_rank())
-    tf.config.experimental.set_visible_devices(gpus[hvd.local_rank()], 'GPU')
+    tf.config.experimental.set_visible_devices(gpus[hvd.local_rank()], 'XPU')
 
   data_format = 'channels_first'
   tf.keras.backend.set_image_data_format(data_format)
@@ -294,26 +294,6 @@ def serialize_config(params: base_configs.ExperimentConfig, model_dir: str):
   tf.io.gfile.makedirs(model_dir)
   hyperparams.save_params_dict_to_yaml(params, params_save_path)
 
-def input_fn(batch_size, height, width, num_channels, num_classes, dtype):
-  """Returns dataset filled with random data."""
-  inputs = tf.random.truncated_normal([height, width, num_channels],
-                                      dtype=dtype,
-                                      mean=127,
-                                      stddev=60,
-                                      name='synthetic_inputs')
-  labels = tf.random.uniform([1],
-                             minval=0,
-                             maxval=num_classes - 1,
-                             dtype=tf.int32,
-                             name='synthetic_labels')
-  # Cast to float32 for Keras model.
-  labels = tf.cast(labels, dtype=tf.float32)
-  data = tf.data.Dataset.from_tensors((inputs, labels)).repeat()
-
-  # `drop_remainder` will make dataset produce outputs with known shapes.
-  data = data.batch(batch_size, drop_remainder=drop_remainder)
-  data = data.prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
-  return data
 
 def train_and_eval(
     params: base_configs.ExperimentConfig,
@@ -322,12 +302,12 @@ def train_and_eval(
   logging.info('Running train and eval.')
 
   if is_mpi:
-    gpus = tf.config.experimental.list_physical_devices('GPU')
+    gpus = tf.config.experimental.list_physical_devices('XPU')
     for gpu in gpus:
       tf.config.experimental.set_memory_growth(gpu, True)
     print("zl_debug %d ", hvd.local_rank())
-    tf.config.experimental.set_visible_devices(gpus[hvd.local_rank()], 'GPU')
-    tf.config.experimental.list_logical_devices('GPU')
+    tf.config.experimental.set_visible_devices(gpus[hvd.local_rank()], 'XPU')
+    tf.config.experimental.list_logical_devices('XPU')
 
   distribute_utils.configure_cluster(params.runtime.worker_hosts,
                                      params.runtime.task_index)

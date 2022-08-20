@@ -107,11 +107,11 @@ def run(flags_obj):
     Dictionary of training and eval stats.
   """
   if is_mpi:
-    gpus = tf.config.experimental.list_physical_devices('GPU')
+    gpus = tf.config.experimental.list_physical_devices('XPU')
     for gpu in gpus:
       tf.config.experimental.set_memory_growth(gpu, True)
     print("zl_debug %d ", hvd.local_rank())
-    tf.config.experimental.set_visible_devices(gpus[hvd.local_rank()], 'GPU')
+    tf.config.experimental.set_visible_devices(gpus[hvd.local_rank()], 'XPU')
 
   keras_utils.set_session_config()
   performance.set_mixed_precision_policy(flags_core.get_tf_dtype(flags_obj))
@@ -126,7 +126,8 @@ def run(flags_obj):
 
   data_format = flags_obj.data_format
   if data_format is None:
-    data_format = 'channels_first'
+    data_format = ('channels_first' if tf.config.list_physical_devices('XPU')
+                   else 'channels_last')
   tf.keras.backend.set_image_data_format(data_format)
 
   strategy = distribute_utils.get_distribution_strategy(
