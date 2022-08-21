@@ -383,19 +383,33 @@ def train_and_eval(
     initial_epoch = resume_from_checkpoint(
       model=model, model_dir=params.model_dir, train_steps=train_steps)
 
-  callbacks = [
-    custom_callbacks.get_callbacks(
-    model_checkpoint=params.train.callbacks.enable_checkpoint_and_export,
-    include_tensorboard=params.train.callbacks.enable_tensorboard,
-    time_history=params.train.callbacks.enable_time_history,
-    track_lr=params.train.tensorboard.track_lr,
-    write_model_weights=params.train.tensorboard.write_model_weights,
-    initial_step=initial_epoch * train_steps,
-    batch_size=train_builder.global_batch_size,
-    log_steps=params.train.time_history.log_steps,
-    model_dir=params.model_dir,
-    backup_and_restore=params.train.callbacks.enable_backup_and_restore),
-    hvd.callbacks.BroadcastGlobalVariablesCallback(0)]
+  callbacks = []
+  if hvd.local_rank() == 0:
+    callbacks = [
+      custom_callbacks.get_callbacks(
+      model_checkpoint=params.train.callbacks.enable_checkpoint_and_export,
+      include_tensorboard=params.train.callbacks.enable_tensorboard,
+      time_history=params.train.callbacks.enable_time_history,
+      track_lr=params.train.tensorboard.track_lr,
+      write_model_weights=params.train.tensorboard.write_model_weights,
+      initial_step=initial_epoch * train_steps,
+      batch_size=train_builder.global_batch_size,
+      log_steps=params.train.time_history.log_steps,
+      model_dir=params.model_dir,
+      backup_and_restore=params.train.callbacks.enable_backup_and_restore),
+      hvd.keras.callbacks.BroadcastGlobalVariablesCallback(0)]
+  else:
+    callbacks = [
+      custom_callbacks.get_callbacks(
+      include_tensorboard=params.train.callbacks.enable_tensorboard,
+      time_history=params.train.callbacks.enable_time_history,
+      track_lr=params.train.tensorboard.track_lr,
+      write_model_weights=params.train.tensorboard.write_model_weights,
+      initial_step=initial_epoch * train_steps,
+      batch_size=train_builder.global_batch_size,
+      log_steps=params.train.time_history.log_steps,
+      model_dir=params.model_dir,
+      backup_and_restore=params.train.callbacks.enable_backup_and_restore)]
 
   serialize_config(params=params, model_dir=params.model_dir)
 
