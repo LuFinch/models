@@ -294,26 +294,6 @@ def serialize_config(params: base_configs.ExperimentConfig, model_dir: str):
   tf.io.gfile.makedirs(model_dir)
   hyperparams.save_params_dict_to_yaml(params, params_save_path)
 
-def input_fn(batch_size, height, width, num_channels, num_classes, dtype):
-  """Returns dataset filled with random data."""
-  inputs = tf.random.truncated_normal([height, width, num_channels],
-                                      dtype=dtype,
-                                      mean=127,
-                                      stddev=60,
-                                      name='synthetic_inputs')
-  labels = tf.random.uniform([1],
-                             minval=0,
-                             maxval=num_classes - 1,
-                             dtype=tf.int32,
-                             name='synthetic_labels')
-  # Cast to float32 for Keras model.
-  labels = tf.cast(labels, dtype=tf.float32)
-  data = tf.data.Dataset.from_tensors((inputs, labels)).repeat()
-
-  # `drop_remainder` will make dataset produce outputs with known shapes.
-  data = data.batch(batch_size, drop_remainder=drop_remainder)
-  data = data.prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
-  return data
 
 def train_and_eval(
     params: base_configs.ExperimentConfig,
@@ -368,7 +348,7 @@ def train_and_eval(
   model = get_models()[params.model.name](**model_params)
   learning_rate = optimizer_factory.build_learning_rate(
     params=params.model.learning_rate,
-    batch_size=train_builder.global_batch_size,
+    batch_size=train_builder.global_batch_size * hvd.size(),
     train_epochs=train_epochs,
     train_steps=train_steps)
   optimizer = optimizer_factory.build_optimizer(
@@ -403,17 +383,33 @@ def train_and_eval(
     initial_epoch = resume_from_checkpoint(
       model=model, model_dir=params.model_dir, train_steps=train_steps)
 
-  callbacks = custom_callbacks.get_callbacks(
-    model_checkpoint=params.train.callbacks.enable_checkpoint_and_export,
-    include_tensorboard=params.train.callbacks.enable_tensorboard,
-    time_history=params.train.callbacks.enable_time_history,
-    track_lr=params.train.tensorboard.track_lr,
-    write_model_weights=params.train.tensorboard.write_model_weights,
-    initial_step=initial_epoch * train_steps,
-    batch_size=train_builder.global_batch_size,
-    log_steps=params.train.time_history.log_steps,
-    model_dir=params.model_dir,
-    backup_and_restore=params.train.callbacks.enable_backup_and_restore)
+  callbacks = []
+  if hvd.local_rank() == 0:
+    callbacks = [
+      custom_callbacks.get_callbacks(
+      model_checkpoint=params.train.callbacks.enable_checkpoint_and_export,
+      include_tensorboard=params.train.callbacks.enable_tensorboard,
+      time_history=params.train.callbacks.enable_time_history,
+      track_lr=params.train.tensorboard.track_lr,
+      write_model_weights=params.train.tensorboard.write_model_weights,
+      initial_step=initial_epoch * train_steps,
+      batch_size=train_builder.global_batch_size,
+      log_steps=params.train.time_history.log_steps,
+      model_dir=params.model_dir,
+      backup_and_restore=params.train.callbacks.enable_backup_and_restore),
+      hvd.keras.callbacks.BroadcastGlobalVariablesCallback(0)]
+  else:
+    callbacks = [
+      custom_callbacks.get_callbacks(
+      include_tensorboard=params.train.callbacks.enable_tensorboard,
+      time_history=params.train.callbacks.enable_time_history,
+      track_lr=params.train.tensorboard.track_lr,
+      write_model_weights=params.train.tensorboard.write_model_weights,
+      initial_step=initial_epoch * train_steps,
+      batch_size=train_builder.global_batch_size,
+      log_steps=params.train.time_history.log_steps,
+      model_dir=params.model_dir,
+      backup_and_restore=params.train.callbacks.enable_backup_and_restore)]
 
   serialize_config(params=params, model_dir=params.model_dir)
 

@@ -68,7 +68,7 @@ class ResnetRunnable(orbit.StandardTrainer, orbit.StandardEvaluator):
         boundaries=list(p[1] for p in common.LR_SCHEDULE[1:]),
         multipliers=list(p[0] for p in common.LR_SCHEDULE),
         compute_lr_on_cpu=True)
-    self.optimizer = common.get_optimizer()
+    self.optimizer = common.get_optimizer(lr_schedule)
     # Make sure iterations variable is created inside scope.
     self.global_step = self.optimizer.iterations
 
@@ -77,7 +77,6 @@ class ResnetRunnable(orbit.StandardTrainer, orbit.StandardEvaluator):
         use_float16=self.dtype == tf.float16,
         loss_scale=flags_core.get_loss_scale(flags_obj, default_for_fp16=128))
 
-    #self.optimizer = hvd.DistributedOptimizer(self.optimizer)
     self.train_loss = tf.keras.metrics.Mean('train_loss', dtype=tf.float32)
     self.train_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(
         'train_accuracy', dtype=tf.float32)
@@ -157,8 +156,7 @@ class ResnetRunnable(orbit.StandardTrainer, orbit.StandardEvaluator):
           loss += (l2_loss / num_replicas)
         else:
           loss += (tf.reduce_sum(self.model.losses) / num_replicas)
-      
-      #tape = hvd.DistributedGradientTape(tape)
+
       grad_utils.minimize_using_explicit_allreduce(
           tape, self.optimizer, loss, self.model.trainable_variables)
       self.train_loss.update_state(loss)
