@@ -339,6 +339,7 @@ def train_and_eval(
   train_epochs = params.train.epochs
   train_steps = params.train.steps or train_builder.num_steps
   validation_steps = params.evaluation.steps or validation_builder.num_steps
+  print("zl_debug tran steps:", train_steps, " validation steps:", validation_steps)
 
   initialize(params, train_builder)
 

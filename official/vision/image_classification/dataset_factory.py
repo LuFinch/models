@@ -29,6 +29,7 @@ import tensorflow_datasets as tfds
 from official.modeling.hyperparams import base_config
 from official.vision.image_classification import augment
 from official.vision.image_classification import preprocessing
+import horovod.tensorflow as hvd
 
 AUGMENTERS = {
     'autoaugment': augment.AutoAugment,
@@ -207,7 +208,7 @@ class DatasetBuilder:
   def num_steps(self) -> int:
     """The number of steps (batches) to exhaust this dataset."""
     # Always divide by the global batch size to get the correct # of steps
-    return self.num_examples // self.global_batch_size
+    return self.num_examples // (self.global_batch_size * hvd.size())
 
   @property
   def dtype(self) -> tf.dtypes.DType:
@@ -403,14 +404,9 @@ class DatasetBuilder:
     Returns:
       A TensorFlow dataset outputting batched images and labels.
     """
-    if (self.config.builder != 'tfds' and self.input_context and
-        self.input_context.num_input_pipelines > 1):
-      dataset = dataset.shard(self.input_context.num_input_pipelines,
-                              self.input_context.input_pipeline_id)
-      logging.info(
-          'Sharding the dataset: input_pipeline_id=%d '
-          'num_input_pipelines=%d', self.input_context.num_input_pipelines,
-          self.input_context.input_pipeline_id)
+    dataset = dataset.shard(hvd.size(), hvd.rank())
+    logging.info(
+        'Sharding the dataset: total size: %d ', hvd.size(), " local rank: %d ", hvd.rank())
 
     if self.is_training and self.config.builder == 'records':
       # Shuffle the input files.
