@@ -385,8 +385,7 @@ def train_and_eval(
 
   callbacks = []
   if hvd.local_rank() == 0:
-    callbacks = [
-      custom_callbacks.get_callbacks(
+    callbacks = custom_callbacks.get_callbacks(
       model_checkpoint=params.train.callbacks.enable_checkpoint_and_export,
       include_tensorboard=params.train.callbacks.enable_tensorboard,
       time_history=params.train.callbacks.enable_time_history,
@@ -396,11 +395,10 @@ def train_and_eval(
       batch_size=train_builder.global_batch_size,
       log_steps=params.train.time_history.log_steps,
       model_dir=params.model_dir,
-      backup_and_restore=params.train.callbacks.enable_backup_and_restore),
-      hvd.keras.callbacks.BroadcastGlobalVariablesCallback(0)]
+      backup_and_restore=params.train.callbacks.enable_backup_and_restore)
   else:
-    callbacks = [
-      custom_callbacks.get_callbacks(
+    callbacks = custom_callbacks.get_callbacks(
+      model_checkpoint=False,
       include_tensorboard=params.train.callbacks.enable_tensorboard,
       time_history=params.train.callbacks.enable_time_history,
       track_lr=params.train.tensorboard.track_lr,
@@ -409,7 +407,10 @@ def train_and_eval(
       batch_size=train_builder.global_batch_size,
       log_steps=params.train.time_history.log_steps,
       model_dir=params.model_dir,
-      backup_and_restore=params.train.callbacks.enable_backup_and_restore)]
+      backup_and_restore=params.train.callbacks.enable_backup_and_restore)
+
+  print("zl_debug localranks ", hvd.local_rank())
+  print("zl_debug callbacks ", callbacks)
 
   serialize_config(params=params, model_dir=params.model_dir)
 
