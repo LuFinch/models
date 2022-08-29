@@ -31,7 +31,6 @@ from official.utils.misc import model_helpers
 from official.vision.image_classification.resnet import common
 from official.vision.image_classification.resnet import imagenet_preprocessing
 from official.vision.image_classification.resnet import resnet_runnable
-from keras import backend as K
 
 flags.DEFINE_boolean(name='use_tf_function', default=True,
                      help='Wrap the train and test step inside a '
@@ -40,14 +39,6 @@ flags.DEFINE_boolean(name='single_l2_loss_op', default=False,
                      help='Calculate L2_loss on concatenated weights, '
                      'instead of using Keras per-layer L2 loss.')
 
-global is_mpi
-try:
-    import horovod.tensorflow as hvd
-    hvd.init()
-    is_mpi = hvd.size()
-except ImportError:
-    is_mpi = 0
-    print("No MPI horovod support, this is running in no-MPI mode!")
 
 def build_stats(runnable, time_callback):
   """Normalizes and returns dictionary of stats.
@@ -106,27 +97,21 @@ def run(flags_obj):
   Returns:
     Dictionary of training and eval stats.
   """
-  if is_mpi:
-    gpus = tf.config.experimental.list_physical_devices('XPU')
-    for gpu in gpus:
-      tf.config.experimental.set_memory_growth(gpu, True)
-    print("zl_debug %d ", hvd.local_rank())
-    tf.config.experimental.set_visible_devices(gpus[hvd.local_rank()], 'XPU')
-
   keras_utils.set_session_config()
   performance.set_mixed_precision_policy(flags_core.get_tf_dtype(flags_obj))
 
-  if flags_obj.tf_gpu_thread_mode:
-    keras_utils.set_gpu_thread_mode_and_count(
-      per_gpu_thread_count=flags_obj.per_gpu_thread_count,
-      gpu_thread_mode=flags_obj.tf_gpu_thread_mode,
-      num_gpus=flags_obj.num_gpus,
-      datasets_num_private_threads=flags_obj.datasets_num_private_threads)
-  common.set_cudnn_batchnorm_mode()
+  if tf.config.list_physical_devices('GPU'):
+    if flags_obj.tf_gpu_thread_mode:
+      keras_utils.set_gpu_thread_mode_and_count(
+          per_gpu_thread_count=flags_obj.per_gpu_thread_count,
+          gpu_thread_mode=flags_obj.tf_gpu_thread_mode,
+          num_gpus=flags_obj.num_gpus,
+          datasets_num_private_threads=flags_obj.datasets_num_private_threads)
+    common.set_cudnn_batchnorm_mode()
 
   data_format = flags_obj.data_format
   if data_format is None:
-    data_format = ('channels_first' if tf.config.list_physical_devices('XPU')
+    data_format = ('channels_first' if tf.config.list_physical_devices('GPU')
                    else 'channels_last')
   tf.keras.backend.set_image_data_format(data_format)
 
@@ -185,7 +170,13 @@ def run(flags_obj):
       eval_summary_dir=os.path.join(flags_obj.model_dir, 'eval'))
 
   time_callback.on_train_begin()
-  resnet_controller.train(steps=per_epoch_steps * train_epochs)
+  if not flags_obj.skip_eval:
+    resnet_controller.train_and_evaluate(
+        train_steps=per_epoch_steps * train_epochs,
+        eval_steps=eval_steps,
+        eval_interval=eval_interval)
+  else:
+    resnet_controller.train(steps=per_epoch_steps * train_epochs)
   time_callback.on_train_end()
 
   stats = build_stats(runnable, time_callback)
@@ -196,6 +187,7 @@ def main(_):
   model_helpers.apply_clean(flags.FLAGS)
   stats = run(flags.FLAGS)
   logging.info('Run stats:\n%s', stats)
+
 
 if __name__ == '__main__':
   logging.set_verbosity(logging.INFO)

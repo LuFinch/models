@@ -243,21 +243,24 @@ def initialize(params: base_configs.ExperimentConfig,
     print("zl_debug %d ", hvd.local_rank())
     tf.config.experimental.set_visible_devices(gpus[hvd.local_rank()], 'XPU')
 
-  data_format = 'channels_first'
+  if tf.config.list_physical_devices('GPU'):
+    data_format = 'channels_first'
+  else:
+    data_format = 'channels_last'
   tf.keras.backend.set_image_data_format(data_format)
   if params.runtime.run_eagerly:
     # Enable eager execution to allow step-by-step debugging
-    tf.config.experimental_run_functions_eagerly(False)
-
-  if params.runtime.gpu_thread_mode:
-    keras_utils.set_gpu_thread_mode_and_count(
-      per_gpu_thread_count=params.runtime.per_gpu_thread_count,
-      gpu_thread_mode=params.runtime.gpu_thread_mode,
-      num_gpus=params.runtime.num_gpus,
-      datasets_num_private_threads=params.runtime
-      .dataset_num_private_threads)  # pylint:disable=line-too-long
-  if params.runtime.batchnorm_spatial_persistent:
-    os.environ['TF_USE_CUDNN_BATCHNORM_SPATIAL_PERSISTENT'] = '1'
+    tf.config.experimental_run_functions_eagerly(True)
+  if tf.config.list_physical_devices('GPU'):
+    if params.runtime.gpu_thread_mode:
+      keras_utils.set_gpu_thread_mode_and_count(
+          per_gpu_thread_count=params.runtime.per_gpu_thread_count,
+          gpu_thread_mode=params.runtime.gpu_thread_mode,
+          num_gpus=params.runtime.num_gpus,
+          datasets_num_private_threads=params.runtime
+          .dataset_num_private_threads)  # pylint:disable=line-too-long
+    if params.runtime.batchnorm_spatial_persistent:
+      os.environ['TF_USE_CUDNN_BATCHNORM_SPATIAL_PERSISTENT'] = '1'
 
 
 def define_classifier_flags():
@@ -372,7 +375,7 @@ def train_and_eval(
   else:
     loss_obj = tf.keras.losses.SparseCategoricalCrossentropy()
 
-  hvd_optimizer = hvd.DistributedOptimizer(optimizer)
+  hvd_optimizer = hvd.DistributedOptimizer(optimizer, num_groups=1)
   model.compile(
     optimizer=hvd_optimizer,
     loss=loss_obj,
