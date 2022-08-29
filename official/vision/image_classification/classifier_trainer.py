@@ -39,7 +39,7 @@ from official.vision.image_classification.resnet import resnet_model
 
 global is_mpi
 try:
-    import horovod.tensorflow as hvd
+    import horovod.tensorflow.keras as hvd
     hvd.init()
     is_mpi = hvd.size()
 except ImportError:
