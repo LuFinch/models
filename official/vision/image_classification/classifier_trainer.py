@@ -243,7 +243,10 @@ def initialize(params: base_configs.ExperimentConfig,
     print("zl_debug %d ", hvd.local_rank())
     tf.config.experimental.set_visible_devices(gpus[hvd.local_rank()], 'GPU')
 
-  data_format = 'channels_first'
+  if tf.config.list_physical_devices('GPU'):
+    data_format = 'channels_first'
+  else:
+    data_format = 'channels_last'
   tf.keras.backend.set_image_data_format(data_format)
   if params.runtime.run_eagerly:
     # Enable eager execution to allow step-by-step debugging
@@ -372,7 +375,7 @@ def train_and_eval(
   else:
     loss_obj = tf.keras.losses.SparseCategoricalCrossentropy()
 
-  hvd_optimizer = hvd.DistributedOptimizer(optimizer)
+  hvd_optimizer = hvd.DistributedOptimizer(optimizer, num_groups=1)
   model.compile(
     optimizer=hvd_optimizer,
     loss=loss_obj,

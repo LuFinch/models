@@ -116,13 +116,14 @@ def run(flags_obj):
   keras_utils.set_session_config()
   performance.set_mixed_precision_policy(flags_core.get_tf_dtype(flags_obj))
 
-  if flags_obj.tf_gpu_thread_mode:
-    keras_utils.set_gpu_thread_mode_and_count(
-      per_gpu_thread_count=flags_obj.per_gpu_thread_count,
-      gpu_thread_mode=flags_obj.tf_gpu_thread_mode,
-      num_gpus=flags_obj.num_gpus,
-      datasets_num_private_threads=flags_obj.datasets_num_private_threads)
-  common.set_cudnn_batchnorm_mode()
+  if tf.config.list_physical_devices('GPU'):
+    if flags_obj.tf_gpu_thread_mode:
+      keras_utils.set_gpu_thread_mode_and_count(
+          per_gpu_thread_count=flags_obj.per_gpu_thread_count,
+          gpu_thread_mode=flags_obj.tf_gpu_thread_mode,
+          num_gpus=flags_obj.num_gpus,
+          datasets_num_private_threads=flags_obj.datasets_num_private_threads)
+    common.set_cudnn_batchnorm_mode()
 
   data_format = flags_obj.data_format
   if data_format is None:
@@ -185,7 +186,13 @@ def run(flags_obj):
       eval_summary_dir=os.path.join(flags_obj.model_dir, 'eval'))
 
   time_callback.on_train_begin()
-  resnet_controller.train(steps=per_epoch_steps * train_epochs)
+  if not flags_obj.skip_eval:
+    resnet_controller.train_and_evaluate(
+        train_steps=per_epoch_steps * train_epochs,
+        eval_steps=eval_steps,
+        eval_interval=eval_interval)
+  else:
+    resnet_controller.train(steps=per_epoch_steps * train_epochs)
   time_callback.on_train_end()
 
   stats = build_stats(runnable, time_callback)
@@ -196,6 +203,7 @@ def main(_):
   model_helpers.apply_clean(flags.FLAGS)
   stats = run(flags.FLAGS)
   logging.info('Run stats:\n%s', stats)
+
 
 if __name__ == '__main__':
   logging.set_verbosity(logging.INFO)
