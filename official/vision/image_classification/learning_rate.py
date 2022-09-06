@@ -22,10 +22,12 @@ from typing import Any, Mapping, Optional
 
 import numpy as np
 import tensorflow as tf
+from tensorflow.python.util.tf_export import keras_export
 
 BASE_LEARNING_RATE = 0.1
 
 
+@tf.keras.utils.register_keras_serializable(package='Custom', name='WarmupDeacySchedule')
 class WarmupDecaySchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
   """A wrapper for LearningRateSchedule that includes warmup steps."""
 
@@ -66,10 +68,11 @@ class WarmupDecaySchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
     return lr
 
   def get_config(self) -> Mapping[str, Any]:
-    config = self._lr_schedule.get_config()
+    config = {}
     config.update({
         "warmup_steps": self._warmup_steps,
         "warmup_lr": self._warmup_lr,
+        "lr_schedule": self._lr_schedule,
     })
     return config
 

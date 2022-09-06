@@ -37,6 +37,14 @@ from official.vision.image_classification.efficientnet import efficientnet_model
 from official.vision.image_classification.resnet import common
 from official.vision.image_classification.resnet import resnet_model
 
+global is_mpi
+try:
+    import horovod.tensorflow.keras as hvd
+    hvd.init()
+    is_mpi = hvd.size()
+except ImportError:
+    is_mpi = 0
+    print("No MPI horovod support, this is running in no-MPI mode!")
 
 def get_models() -> Mapping[str, tf.keras.Model]:
   """Returns the mapping from model type name to Keras model."""
@@ -289,6 +297,12 @@ def train_and_eval(
   """Runs the train and eval path using compile/fit."""
   logging.info('Running train and eval.')
 
+  if is_mpi:
+    gpus = tf.config.experimental.list_physical_devices('XPU')
+    for gpu in gpus:
+      tf.config.experimental.set_memory_growth(gpu, True)
+    tf.config.experimental.set_visible_devices(gpus[hvd.local_rank()], 'XPU')
+
   distribute_utils.configure_cluster(params.runtime.worker_hosts,
                                      params.runtime.task_index)
 
@@ -299,7 +313,7 @@ def train_and_eval(
       num_gpus=params.runtime.num_gpus,
       tpu_address=params.runtime.tpu)
 
-  strategy_scope = distribute_utils.get_strategy_scope(strategy)
+  #strategy_scope = distribute_utils.get_strategy_scope(strategy)
 
   logging.info('Detected %d devices.',
                strategy.num_replicas_in_sync if strategy else 1)
@@ -324,56 +338,74 @@ def train_and_eval(
 
   logging.info('Global batch size: %d', train_builder.global_batch_size)
 
-  with strategy_scope:
-    model_params = params.model.model_params.as_dict()
-    model = get_models()[params.model.name](**model_params)
-    learning_rate = optimizer_factory.build_learning_rate(
-        params=params.model.learning_rate,
-        batch_size=train_builder.global_batch_size,
-        train_epochs=train_epochs,
-        train_steps=train_steps)
-    optimizer = optimizer_factory.build_optimizer(
-        optimizer_name=params.model.optimizer.name,
-        base_learning_rate=learning_rate,
-        params=params.model.optimizer.as_dict(),
-        model=model)
-    optimizer = performance.configure_optimizer(
-        optimizer,
-        use_float16=train_builder.dtype == 'float16',
-        loss_scale=get_loss_scale(params))
+  model_params = params.model.model_params.as_dict()
+  model = get_models()[params.model.name](**model_params)
+  learning_rate = optimizer_factory.build_learning_rate(
+    params=params.model.learning_rate,
+    batch_size=train_builder.global_batch_size * hvd.size(),
+    train_epochs=train_epochs,
+    train_steps=train_steps)
+  optimizer = optimizer_factory.build_optimizer(
+    optimizer_name=params.model.optimizer.name,
+    base_learning_rate=learning_rate,
+    params=params.model.optimizer.as_dict(),
+    model=model)
+  optimizer = performance.configure_optimizer(
+    optimizer,
+    use_float16=train_builder.dtype == 'float16',
+    loss_scale=get_loss_scale(params))
 
-    metrics_map = _get_metrics(one_hot)
-    metrics = [metrics_map[metric] for metric in params.train.metrics]
-    steps_per_loop = train_steps if params.train.set_epoch_loop else 1
+  metrics_map = _get_metrics(one_hot)
+  metrics = [metrics_map[metric] for metric in params.train.metrics]
+  steps_per_loop = train_steps if params.train.set_epoch_loop else 1
 
-    if one_hot:
-      loss_obj = tf.keras.losses.CategoricalCrossentropy(
-          label_smoothing=params.model.loss.label_smoothing)
-    else:
-      loss_obj = tf.keras.losses.SparseCategoricalCrossentropy()
-    model.compile(
-        optimizer=optimizer,
-        loss=loss_obj,
-        metrics=metrics,
-        steps_per_execution=steps_per_loop)
+  if one_hot:
+    loss_obj = tf.keras.losses.CategoricalCrossentropy(
+      label_smoothing=params.model.loss.label_smoothing)
+  else:
+    loss_obj = tf.keras.losses.SparseCategoricalCrossentropy()
 
-    initial_epoch = 0
-    if params.train.resume_checkpoint:
-      initial_epoch = resume_from_checkpoint(
-          model=model, model_dir=params.model_dir, train_steps=train_steps)
+  hvd_optimizer = hvd.DistributedOptimizer(optimizer, num_groups=1)
+  model.compile(
+    optimizer=hvd_optimizer,
+    loss=loss_obj,
+    metrics=metrics,
+    steps_per_execution=steps_per_loop)
 
+  initial_epoch = 0
+  if params.train.resume_checkpoint:
+    initial_epoch = resume_from_checkpoint(
+      model=model, model_dir=params.model_dir, train_steps=train_steps)
+
+  # Add broadcast callback for rank0
+  callbacks = []
+
+  if hvd.local_rank() == 0:
     callbacks = custom_callbacks.get_callbacks(
-        model_checkpoint=params.train.callbacks.enable_checkpoint_and_export,
-        include_tensorboard=params.train.callbacks.enable_tensorboard,
-        time_history=params.train.callbacks.enable_time_history,
-        track_lr=params.train.tensorboard.track_lr,
-        write_model_weights=params.train.tensorboard.write_model_weights,
-        initial_step=initial_epoch * train_steps,
-        batch_size=train_builder.global_batch_size,
-        log_steps=params.train.time_history.log_steps,
-        model_dir=params.model_dir,
-        backup_and_restore=params.train.callbacks.enable_backup_and_restore)
+      model_checkpoint=params.train.callbacks.enable_checkpoint_and_export,
+      include_tensorboard=params.train.callbacks.enable_tensorboard,
+      time_history=params.train.callbacks.enable_time_history,
+      track_lr=params.train.tensorboard.track_lr,
+      write_model_weights=params.train.tensorboard.write_model_weights,
+      initial_step=initial_epoch * train_steps,
+      batch_size=train_builder.global_batch_size,
+      log_steps=params.train.time_history.log_steps,
+      model_dir=params.model_dir,
+      backup_and_restore=params.train.callbacks.enable_backup_and_restore)
+  else:
+    callbacks = custom_callbacks.get_callbacks(
+      model_checkpoint=False,
+      include_tensorboard=params.train.callbacks.enable_tensorboard,
+      time_history=params.train.callbacks.enable_time_history,
+      track_lr=params.train.tensorboard.track_lr,
+      write_model_weights=params.train.tensorboard.write_model_weights,
+      initial_step=initial_epoch * train_steps,
+      batch_size=train_builder.global_batch_size,
+      log_steps=params.train.time_history.log_steps,
+      model_dir=params.model_dir,
+      backup_and_restore=params.train.callbacks.enable_backup_and_restore)
 
+  callbacks.append(hvd.callbacks.BroadcastGlobalVariablesCallback(0))
   serialize_config(params=params, model_dir=params.model_dir)
 
   if params.evaluation.skip_eval:
