@@ -240,7 +240,7 @@ def initialize(params: base_configs.ExperimentConfig,
     gpus = tf.config.experimental.list_physical_devices('XPU')
     for gpu in gpus:
       tf.config.experimental.set_memory_growth(gpu, True)
-    print("zl_debug %d ", hvd.local_rank())
+    # print("zl_debug %d ", hvd.local_rank())
     tf.config.experimental.set_visible_devices(gpus[hvd.local_rank()], 'XPU')
 
   if tf.config.list_physical_devices('GPU'):
@@ -308,7 +308,7 @@ def train_and_eval(
     gpus = tf.config.experimental.list_physical_devices('XPU')
     for gpu in gpus:
       tf.config.experimental.set_memory_growth(gpu, True)
-    print("zl_debug %d ", hvd.local_rank())
+    # print("zl_debug %d ", hvd.local_rank())
     tf.config.experimental.set_visible_devices(gpus[hvd.local_rank()], 'XPU')
     tf.config.experimental.list_logical_devices('XPU')
 
@@ -342,7 +342,7 @@ def train_and_eval(
   train_epochs = params.train.epochs
   train_steps = params.train.steps or train_builder.num_steps
   validation_steps = params.evaluation.steps or validation_builder.num_steps
-  print("zl_debug tran steps:", train_steps, " validation steps:", validation_steps)
+  # print("zl_debug tran steps:", train_steps, " validation steps:", validation_steps)
 
   initialize(params, train_builder)
 
@@ -387,7 +387,9 @@ def train_and_eval(
     initial_epoch = resume_from_checkpoint(
       model=model, model_dir=params.model_dir, train_steps=train_steps)
 
+  # Add broadcast callback for rank0
   callbacks = []
+
   if hvd.local_rank() == 0:
     callbacks = custom_callbacks.get_callbacks(
       model_checkpoint=params.train.callbacks.enable_checkpoint_and_export,
@@ -413,7 +415,8 @@ def train_and_eval(
       model_dir=params.model_dir,
       backup_and_restore=params.train.callbacks.enable_backup_and_restore)
 
-  print("zl_debug localranks ", hvd.local_rank())
+  callbacks.append(hvd.callbacks.BroadcastGlobalVariablesCallback(0))
+  # print("zl_debug localranks ", hvd.local_rank())
   print("zl_debug callbacks ", callbacks)
 
   serialize_config(params=params, model_dir=params.model_dir)
