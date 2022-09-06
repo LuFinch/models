@@ -404,9 +404,10 @@ class DatasetBuilder:
     Returns:
       A TensorFlow dataset outputting batched images and labels.
     """
-    dataset = dataset.shard(hvd.size(), hvd.rank())
-    logging.info(
-        'Sharding the dataset: total size: %d ', hvd.size(), " local rank: %d ", hvd.rank())
+    if self.is_training:
+      dataset = dataset.shard(hvd.size(), hvd.rank())
+      logging.info(
+          'Sharding the dataset: total size: %d ', hvd.size(), " local rank: %d ", hvd.rank())
 
     if self.is_training and self.config.builder == 'records':
       # Shuffle the input files.
