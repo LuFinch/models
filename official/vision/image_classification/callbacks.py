@@ -78,6 +78,8 @@ def get_callbacks(
             save_weights_only=True,
             verbose=1))
     callbacks.append(MovingAverageCallback())
+    callbacks.append(ThresholdStopping(
+      monitor = "val_accuracy", threshold = 0.759))
   return callbacks
 
 
@@ -254,3 +256,38 @@ class AverageModelCheckpoint(tf.keras.callbacks.ModelCheckpoint):
       result = super()._save_model(epoch, logs)  # pytype: disable=attribute-error  # typed-keras
       self.model.set_weights(non_avg_weights)
       return result
+
+class ThresholdStopping(tf.keras.callbacks.Callback):
+  def __init__(self,
+               monitor="val_accuracy",
+               threshold=1
+              ):
+    super().__init__()
+
+    self.monitor = monitor
+    self.threshold = threshold
+    self.stopped_epoch = 0
+
+  def on_train_begin(self, logs=None):
+    self.stopped_epoch = 0
+
+  def on_epoch_end(self, epoch, logs=None):
+    current = self.get_monitor_value(logs)
+    if current is None:
+      return
+    if current >= self.threshold:
+      self.stopped_epoch = epoch
+      self.model.stop_training = True
+
+  def get_monitor_value(self, logs):
+    logs = logs or {}
+    monitor_value = logs.get(self.monitor)
+    if monitor_value is None:
+      logging.warning(
+        "Early stopping conditioned on metric `%s` "
+        "which is not available. Available metrics are: %s",
+        self.monitor,
+        ",".join(list(logs.keys())),
+        )
+    return monitor_value
+

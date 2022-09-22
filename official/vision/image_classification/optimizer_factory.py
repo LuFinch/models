@@ -26,6 +26,7 @@ import tensorflow_addons as tfa
 from official.modeling import optimization
 from official.vision.image_classification import learning_rate
 from official.vision.image_classification.configs import base_configs
+import official.vision.image_classification.lars_optimizer as lars_optimizer
 
 # pylint: disable=protected-access
 
@@ -102,6 +103,16 @@ def build_optimizer(
         beta_1=beta_1,
         beta_2=beta_2,
         epsilon=epsilon)
+  elif optimizer_name == 'lars':
+    logging.info('Using Lars')
+    weight_decay = params.get('weight_decay', 0.0002)
+    epsilon = params.get('epsilon', 0)
+    optimizer = lars_optimizer.LARSOptimizer(
+          learning_rate=base_learning_rate,
+          momentum=params.get('momentum', 0.9),
+          weight_decay=weight_decay,
+          skip_list=['batch_normalization', 'bias', 'bn'],
+          epsilon=epsilon)
   else:
     raise ValueError('Unknown optimizer %s' % optimizer_name)
 
@@ -172,6 +183,14 @@ def build_learning_rate(params: base_configs.LearningRateConfig,
         batch_size=batch_size,
         total_steps=train_epochs * train_steps,
         warmup_steps=warmup_steps)
+  elif decay_type == 'polynomial':
+    lr = learning_rate.PolynomialDecayWithWarmup(
+        batch_size=batch_size,
+        steps_per_epoch=train_steps,
+        train_steps=train_epochs * train_steps,
+        initial_learning_rate=base_lr,
+        warmup_epochs=params.warmup_epochs)
+    return lr
   if warmup_steps > 0:
     if decay_type not in ['cosine_with_warmup']:
       logging.info('Applying %d warmup steps to the learning rate',

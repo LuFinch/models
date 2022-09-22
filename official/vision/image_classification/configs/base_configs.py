@@ -180,6 +180,7 @@ class OptimizerConfig(hyperparams.Config):
   beta_1: float = None
   beta_2: float = None
   epsilon: float = None
+  weight_decay: float = None
 
 
 @dataclasses.dataclass
