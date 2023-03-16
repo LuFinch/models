@@ -31,11 +31,13 @@ from tensorflow.python.ops import state_ops
 # from tensorflow.python.keras import backend_config
 # from tensorflow.python.keras.optimizer_v2 import optimizer_v2
 tf_minor = int(tf.__version__.split('.')[1])
-if tf_minor >= 9:
-  from keras.optimizers.optimizer_v2 import optimizer_v2
-  from keras import backend_config
-elif tf_minor >= 6:
-  from keras.optimizer_v2 import optimizer_v2
+if tf_minor >= 7:
+  if tf_minor >= 12:
+    from keras.optimizers.legacy import optimizer_v2
+  elif tf_minor >= 9:
+    from keras.optimizers.optimizer_v2 import optimizer_v2
+  else:
+    from keras.optimizer_v2 import optimizer_v2
   from keras import backend_config
 else:
   from tensorflow.python.keras.optimizer_v2 import optimizer_v2
